@@ -1,5 +1,3 @@
-# KVM
-Madlab Nexus KVM configs
 
 # Complete Arch Linux VFIO Gaming & Hackintosh Setup Guide
 ## Lenovo P16v - Multi-VM Gaming & macOS Setup
@@ -312,19 +310,50 @@ Write down your IDs - you'll need them in the next step.
 
 ### Configure Bootloader Entry
 
+**CRITICAL: Use UUID instead of device names to prevent boot issues**
+
+First, find your root partition UUID:
+
+```bash
+# Get UUID of your root partition (nvme0n1p3)
+blkid /dev/nvme0n1p3
+# Output example: /dev/nvme0n1p3: UUID="a1b2c3d4-e5f6-7890-abcd-ef1234567890" TYPE="ext4"
+
+# OR see all UUIDs:
+blkid
+
+# Write down the UUID of your ROOT partition (the big ext4 partition)
+```
+
+Now create the bootloader entry:
+
 ```bash
 nano /boot/loader/entries/arch.conf
 ```
 
-**Replace XXXX and YYYY with YOUR actual GPU IDs from above:**
+**Replace XXXX and YYYY with YOUR actual GPU IDs from lspci, and YOUR-ROOT-UUID with the UUID you just found:**
 
 ```
 title   Arch Linux VFIO
 linux   /vmlinuz-linux
 initrd  /intel-ucode.img
 initrd  /initramfs-linux.img
-options root=/dev/nvme0n1p3 rw intel_iommu=on iommu=pt vfio-pci.ids=10de:XXXX,10de:YYYY video=efifb:off kvm.ignore_msrs=1 kvm.report_ignored_msrs=0 kvm_intel.nested=1 kvm_intel.ept=1 kvm_intel.emulate_invalid_guest_state=0 kvm_intel.enable_shadow_vmcs=1 kvm_intel.enable_apicv=1
+options root=UUID=YOUR-ROOT-UUID rw intel_iommu=on iommu=pt vfio-pci.ids=10de:XXXX,10de:YYYY video=efifb:off kvm.ignore_msrs=1 kvm.report_ignored_msrs=0 kvm_intel.nested=1 kvm_intel.ept=1 kvm_intel.emulate_invalid_guest_state=0 kvm_intel.enable_shadow_vmcs=1 kvm_intel.enable_apicv=1
 ```
+
+**Example with real values:**
+```
+title   Arch Linux VFIO
+linux   /vmlinuz-linux
+initrd  /intel-ucode.img
+initrd  /initramfs-linux.img
+options root=UUID=a1b2c3d4-e5f6-7890-abcd-ef1234567890 rw intel_iommu=on iommu=pt vfio-pci.ids=10de:25e0,10de:2291 video=efifb:off kvm.ignore_msrs=1 kvm.report_ignored_msrs=0 kvm_intel.nested=1 kvm_intel.ept=1 kvm_intel.emulate_invalid_guest_state=0 kvm_intel.enable_shadow_vmcs=1 kvm_intel.enable_apicv=1
+```
+
+**Why use UUID instead of /dev/nvme0n1p3?**
+- ✅ Device names can change order between boots
+- ✅ UUID is permanent and unique to that specific partition
+- ✅ Prevents "kernel panic - not syncing: VFS: Unable to mount root fs" errors
 
 **Explanation of kernel parameters:**
 - `intel_iommu=on` - Enables IOMMU
@@ -627,6 +656,26 @@ lspci -D | grep -i nvidia
 lspci -D | grep -i usb
 # Example: 0000:00:14.0
 
+# CRITICAL: Find NVMe drives by stable ID (not /dev/nvmeXnX which changes!)
+ls -l /dev/disk/by-id/ | grep nvme
+
+# Example output:
+# nvme-Samsung_SSD_980_PRO_1TB_S5GXNG0R123456 -> ../../nvme0n1
+# nvme-WD_Black_SN850_2TB_AB123456789 -> ../../nvme1n1
+
+# Write down the full "by-id" names - you'll need them for VM passthrough
+# Example: /dev/disk/by-id/nvme-WD_Black_SN850_2TB_AB123456789
+
+# To identify which drive has Windows:
+sudo fdisk -l
+# Look for the drive with Windows partitions (usually NTFS)
+```
+
+**Why use /dev/disk/by-id/ instead of /dev/nvme0n1?**
+- ✅ Device order (/dev/nvme0n1, /dev/nvme1n1) can swap between boots
+- ✅ by-id paths are permanent and tied to the physical drive
+- ✅ Prevents VM from booting the wrong drive
+
 # Save these addresses - you'll need them later
 ```
 
@@ -921,14 +970,19 @@ nano ~/windows11-gaming.xml
   <devices>
     <emulator>/usr/bin/qemu-system-x86_64</emulator>
     
-    <!-- NVMe Passthrough - ADJUST /dev/nvmeXnX to YOUR Windows drive -->
+    <!-- NVMe Passthrough - USE /dev/disk/by-id/ path for stability -->
+    <!-- Find your Windows drive: ls -l /dev/disk/by-id/ | grep nvme -->
     <disk type='block' device='disk'>
       <driver name='qemu' type='raw' cache='none' io='native' discard='unmap' iothread='1' queues='8'/>
-      <source dev='/dev/nvme1n1'/>
+      <source dev='/dev/disk/by-id/nvme-YOUR_WINDOWS_DRIVE_ID_HERE'/>
       <target dev='sda' bus='scsi'/>
       <address type='drive' controller='0' bus='0' target='0' unit='0'/>
       <boot order='1'/>
     </disk>
+    
+    <!-- Example with real drive ID:
+    <source dev='/dev/disk/by-id/nvme-WD_Black_SN850_2TB_AB123456789'/>
+    -->
     
     <!-- SCSI Controller -->
     <controller type='scsi' index='0' model='virtio-scsi'>
@@ -1561,6 +1615,104 @@ Follow macOS installation prompts.
 
 ## 11. Troubleshooting
 
+### NVMe Drive Order Changed After Reboot (CRITICAL FIX)
+
+**Symptom**: System won't boot, or boots to emergency shell with error "Failed to mount /dev/nvme0n1p3"
+
+**Cause**: NVMe device names (/dev/nvme0n1, /dev/nvme1n1) can swap order between boots.
+
+**Fix - Use UUID instead of device names:**
+
+Boot from Arch USB again, then:
+
+```bash
+# Mount your system
+mount /dev/nvme0n1p3 /mnt  # or whatever it is now
+mount /dev/nvme0n1p1 /mnt/boot
+
+# Chroot
+arch-chroot /mnt
+
+# Find your root partition UUID
+blkid | grep nvme
+
+# Example output:
+# /dev/nvme0n1p3: UUID="a1b2c3d4-e5f6-7890-abcd-ef1234567890" TYPE="ext4"
+# /dev/nvme1n1p3: UUID="x9y8z7w6-v5u4-3210-dcba-9876543210fe" TYPE="ext4"
+
+# Identify which is YOUR Arch root (check size with lsblk)
+lsblk
+
+# Edit bootloader entry
+nano /boot/loader/entries/arch.conf
+
+# Change this line:
+# options root=/dev/nvme0n1p3 rw ...
+
+# To this (use YOUR UUID):
+# options root=UUID=a1b2c3d4-e5f6-7890-abcd-ef1234567890 rw ...
+
+# Verify fstab is also using UUIDs (it should be if you used genfstab -U)
+cat /etc/fstab
+# Should show UUID=... not /dev/nvme...
+
+# If fstab has /dev/nvme paths, regenerate it:
+# genfstab -U /mnt >> /mnt/etc/fstab
+
+# Exit and reboot
+exit
+umount -R /mnt
+reboot
+```
+
+**Prevention**: Always use UUIDs or /dev/disk/by-id/ paths, never /dev/sdX or /dev/nvmeXnX.
+
+### VM Can't Find Windows Drive
+
+**Symptom**: VM fails to start with error about missing disk device.
+
+**Cause**: Same issue - NVMe device order changed.
+
+**Fix - Update VM XML to use by-id path:**
+
+```bash
+# Find your Windows drive by-id
+ls -l /dev/disk/by-id/ | grep nvme
+
+# Example output shows which physical drive is which
+# nvme-Samsung_SSD_980_PRO_1TB_S5GXNG0R123456 -> ../../nvme0n1
+# nvme-WD_Black_SN850_2TB_AB123456789 -> ../../nvme1n1
+
+# Identify which has Windows (check with fdisk)
+sudo fdisk -l /dev/nvme0n1
+sudo fdisk -l /dev/nvme1n1
+
+# Edit VM XML
+sudo virsh edit windows11-gaming
+
+# Find the disk section and change:
+# <source dev='/dev/nvme1n1'/>
+
+# To (use YOUR by-id path):
+# <source dev='/dev/disk/by-id/nvme-WD_Black_SN850_2TB_AB123456789'/>
+
+# Save and exit (in virsh edit: :wq)
+
+# Start VM
+sudo virsh start windows11-gaming
+```
+
+**Verification that by-id works:**
+
+```bash
+# Test that the by-id path is valid
+ls -l /dev/disk/by-id/nvme-YOUR_DRIVE_ID_HERE
+# Should show it points to a real device
+
+# by-id paths are symlinks that always point to the correct device
+# regardless of detection order
+```
+
 ### Keyboard Not Working or Wrong Layout (Lenovo Specific)
 
 **Symptom**: Keyboard doesn't respond, or keys produce wrong characters.
@@ -1730,6 +1882,13 @@ Set: `default.clock.min-quantum = 64`
 ## 12. Useful Commands Reference
 
 ```bash
+# Disk and UUID Management
+blkid                               # Show all UUIDs and partition info
+lsblk -f                            # Show filesystems and UUIDs in tree format
+ls -l /dev/disk/by-id/              # Show stable disk IDs
+ls -l /dev/disk/by-uuid/            # Show disks by UUID
+fdisk -l                            # List all partitions
+
 # VM Management
 sudo virsh list --all              # List all VMs
 sudo virsh start windows11-gaming  # Start VM
@@ -1779,10 +1938,11 @@ The author is not responsible for any consequences of following this guide.
 
 ## Guide Information
 
-**Version**: 1.1 (Complete - Single Comprehensive Guide)  
+**Version**: 1.2 (Complete - Single Comprehensive Guide)  
 **Last Updated**: September 29, 2025  
 **Covers**:
 - ✅ Arch Linux installation (complete)
+- ✅ **UUID/by-id path usage (prevents NVMe order change issues)**
 - ✅ Lenovo keyboard port code fix (BR-ABNT2 support)
 - ✅ BIOS & bootloader configuration
 - ✅ KVM/QEMU setup
@@ -1794,6 +1954,7 @@ The author is not responsible for any consequences of following this guide.
 - ✅ Comprehensive troubleshooting
 
 **Changelog**:
+- v1.2: **CRITICAL FIX** - Use UUID for boot partition and /dev/disk/by-id/ for NVMe passthrough to prevent device order issues
 - v1.1: Added Lenovo keyboard port code fix for ThinkPad P16v with BR-ABNT2 keyboard support
 - v1.0: Initial complete guide
 
