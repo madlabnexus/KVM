@@ -104,9 +104,29 @@ Save and exit BIOS.
 Boot from Arch ISO.
 
 ### Set Keyboard Layout (if needed)
+
 ```bash
 loadkeys br-abnt2  # Brazilian keyboard, adjust as needed
 ```
+
+### Fix Lenovo ABNT2 "? /" Key (Scancode 97) - CRITICAL FOR BRAZILIAN KEYBOARDS
+
+**Problem**: On Lenovo laptops with BR-ABNT2 keyboard, the "? /" key (located where right Ctrl usually is) doesn't work because scancode 97 is not mapped correctly.
+
+**Fix NOW (before installation):**
+
+```bash
+# Map scancode 97 to the correct keycode (89 = slash/question mark)
+setkeycodes 97 89
+
+# Test it - type the ? / key - it should work now
+# Try typing: /?
+
+# Reload keymap to apply
+loadkeys br-abnt2
+```
+
+If the key works now, continue with installation. We'll make this permanent later.
 
 ### Verify Boot Mode (should show UEFI)
 ```bash
@@ -458,6 +478,82 @@ Section "InputClass"
 EndSection
 ```
 
+**CRITICAL FIX for ABNT2 "? /" key (Scancode 97):**
+
+This key doesn't work by default on Lenovo ABNT2 keyboards. Fix it permanently:
+
+```bash
+# Create systemd service to remap scancode 97 at boot
+nano /etc/systemd/system/fix-abnt2-slash.service
+```
+
+Add this content:
+```
+[Unit]
+Description=Fix ABNT2 slash/question mark key (scancode 97)
+DefaultDependencies=no
+After=local-fs.target
+Before=sysinit.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/setkeycodes 97 89
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target
+```
+
+Enable the service:
+```bash
+# Enable the fix to run at every boot
+systemctl enable fix-abnt2-slash.service
+```
+
+**Create custom keymap for console (alternative method):**
+
+```bash
+# Create custom keymap directory
+mkdir -p /usr/local/share/kbd/keymaps
+
+# Dump current keymap and modify it
+dumpkeys > /usr/local/share/kbd/keymaps/br-abnt2-lenovo.map
+
+# Edit the custom keymap
+nano /usr/local/share/kbd/keymaps/br-abnt2-lenovo.map
+```
+
+Find or add this line near the top (after the "keymaps" line):
+```
+keycode 97 = slash question
+```
+
+Save and apply:
+```bash
+# Update vconsole to use custom keymap
+echo "KEYMAP=/usr/local/share/kbd/keymaps/br-abnt2-lenovo.map" > /etc/vconsole.conf
+```
+
+**For X11/Wayland (KDE/Plasma) fix:**
+
+```bash
+# Create XKB custom configuration
+mkdir -p /etc/X11/xorg.conf.d
+nano /etc/X11/xorg.conf.d/90-lenovo-abnt2-fix.conf
+```
+
+Add:
+```
+Section "InputClass"
+    Identifier "Lenovo ABNT2 Keyboard Fix"
+    MatchIsKeyboard "on"
+    MatchProduct "AT Translated Set 2 keyboard"
+    Option "XkbLayout" "br"
+    Option "XkbVariant" "abnt2"
+    Option "XkbOptions" "lv3:ralt_switch"
+EndSection
+```
+
 **Additional fix for Lenovo ThinkPad keyboards:**
 
 ```bash
@@ -470,7 +566,11 @@ Add:
 options thinkpad_acpi fan_control=1
 ```
 
-These fixes ensure:
+**Summary of what was fixed:**
+- ✅ Scancode 97 mapped to keycode 89 (slash/question mark)
+- ✅ Automatic fix at every boot via systemd service
+- ✅ Custom keymap for console (alternative)
+- ✅ X11/Wayland configuration for GUI
 - ✅ Correct keyboard layout (BR-ABNT2) at boot
 - ✅ Proper function key behavior
 - ✅ Trackpoint/touchpad work correctly
@@ -1762,7 +1862,7 @@ sudo pacman -S linux-firmware
 ```bash
 # Make sure vconsole is configured
 cat /etc/vconsole.conf
-# Should show: KEYMAP=br-abnt2
+# Should show: KEYMAP=br-abnt2 or KEYMAP=/usr/local/share/kbd/keymaps/br-abnt2-lenovo.map
 
 # If not:
 echo "KEYMAP=br-abnt2" | sudo tee /etc/vconsole.conf
@@ -1781,6 +1881,125 @@ setxkbmap -model abnt2 -layout br -variant abnt2
 
 # Make permanent
 echo 'setxkbmap -model abnt2 -layout br -variant abnt2' >> ~/.xprofile
+```
+
+### ABNT2 "? /" Key Not Working (Scancode 97 Issue)
+
+**Symptom**: The slash/question mark key (where right Ctrl is on US keyboards) doesn't work.
+
+**Temporary fix (immediate):**
+```bash
+# Apply the fix right now
+sudo setkeycodes 97 89
+
+# Test - type the ? / key
+```
+
+**Verify the systemd service is running:**
+```bash
+# Check service status
+sudo systemctl status fix-abnt2-slash.service
+
+# If not enabled:
+sudo systemctl enable fix-abnt2-slash.service
+sudo systemctl start fix-abnt2-slash.service
+```
+
+**If service doesn't exist, create it:**
+```bash
+sudo nano /etc/systemd/system/fix-abnt2-slash.service
+```
+
+Add:
+```
+[Unit]
+Description=Fix ABNT2 slash/question mark key (scancode 97)
+DefaultDependencies=no
+After=local-fs.target
+Before=sysinit.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/setkeycodes 97 89
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target
+```
+
+Then:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable fix-abnt2-slash.service
+sudo systemctl start fix-abnt2-slash.service
+```
+
+**Alternative: Create startup script:**
+```bash
+# Create a script that runs at boot
+sudo nano /usr/local/bin/fix-lenovo-abnt2.sh
+```
+
+Add:
+```bash
+#!/bin/bash
+# Fix Lenovo ABNT2 keyboard scancode 97
+setkeycodes 97 89
+```
+
+Make executable and add to systemd:
+```bash
+sudo chmod +x /usr/local/bin/fix-lenovo-abnt2.sh
+
+# Create service
+sudo nano /etc/systemd/system/lenovo-keyboard-fix.service
+```
+
+Add:
+```
+[Unit]
+Description=Lenovo ABNT2 Keyboard Fixes
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/fix-lenovo-abnt2.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable:
+```bash
+sudo systemctl enable lenovo-keyboard-fix.service
+sudo systemctl start lenovo-keyboard-fix.service
+```
+
+**Test the fix:**
+```bash
+# After reboot, test in console
+# Type: /?
+# Should produce the slash and question mark
+
+# In X11/KDE, test in any text editor
+# The key should work normally
+```
+
+**Debug scancode detection:**
+```bash
+# Install evtest to see what scancode a key produces
+sudo pacman -S evtest
+
+# Run evtest
+sudo evtest
+
+# Select your keyboard device (usually event0 or event1)
+# Press the "? /" key
+# Note the scancode it reports
+
+# If it's not 97, use that scancode in the fix:
+sudo setkeycodes YOUR_SCANCODE 89
 ```
 
 ### GPU Not Binding to vfio-pci
@@ -1938,11 +2157,12 @@ The author is not responsible for any consequences of following this guide.
 
 ## Guide Information
 
-**Version**: 1.2 (Complete - Single Comprehensive Guide)  
+**Version**: 1.3 (Complete - Single Comprehensive Guide)  
 **Last Updated**: September 29, 2025  
 **Covers**:
 - ✅ Arch Linux installation (complete)
-- ✅ **UUID/by-id path usage (prevents NVMe order change issues)**
+- ✅ UUID/by-id path usage (prevents NVMe order change issues)
+- ✅ **Lenovo ABNT2 keyboard complete fix (scancode 97 "? /" key)**
 - ✅ Lenovo keyboard port code fix (BR-ABNT2 support)
 - ✅ BIOS & bootloader configuration
 - ✅ KVM/QEMU setup
@@ -1954,7 +2174,8 @@ The author is not responsible for any consequences of following this guide.
 - ✅ Comprehensive troubleshooting
 
 **Changelog**:
-- v1.2: **CRITICAL FIX** - Use UUID for boot partition and /dev/disk/by-id/ for NVMe passthrough to prevent device order issues
+- v1.3: **CRITICAL FIX** - Complete Lenovo ABNT2 keyboard fix including scancode 97 remapping for "? /" key (works in console, X11, and Wayland)
+- v1.2: CRITICAL FIX - Use UUID for boot partition and /dev/disk/by-id/ for NVMe passthrough to prevent device order issues
 - v1.1: Added Lenovo keyboard port code fix for ThinkPad P16v with BR-ABNT2 keyboard support
 - v1.0: Initial complete guide
 
