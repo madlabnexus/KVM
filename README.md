@@ -109,15 +109,15 @@ Boot from Arch ISO.
 loadkeys br-abnt2  # Brazilian keyboard, adjust as needed
 ```
 
-### Fix Lenovo ABNT2 "? /" Key (Scancode 97) - CRITICAL FOR BRAZILIAN KEYBOARDS
+### Fix Lenovo ABNT2 "? /" Key (Extended Scancode e01d) - CRITICAL FOR BRAZILIAN KEYBOARDS
 
-**Problem**: On Lenovo laptops with BR-ABNT2 keyboard, the "? /" key (located where right Ctrl usually is) doesn't work because scancode 97 is not mapped correctly.
+**Problem**: On Lenovo laptops with BR-ABNT2 keyboard, the "? /" key (located where right Ctrl usually is) doesn't work because extended scancode `e01d` is not mapped correctly.
 
 **Fix NOW (before installation):**
 
 ```bash
-# Map scancode 97 to the correct keycode (89 = slash/question mark)
-setkeycodes 97 89
+# Map extended scancode e01d to the correct keycode (89 = slash/question mark)
+setkeycodes e01d 89
 
 # Test it - type the ? / key - it should work now
 # Try typing: /?
@@ -478,26 +478,26 @@ Section "InputClass"
 EndSection
 ```
 
-**CRITICAL FIX for ABNT2 "? /" key (Scancode 97):**
+**CRITICAL FIX for ABNT2 "? /" key (Extended Scancode e01d):**
 
 This key doesn't work by default on Lenovo ABNT2 keyboards. Fix it permanently:
 
 ```bash
-# Create systemd service to remap scancode 97 at boot
+# Create systemd service to remap scancode e01d at boot
 nano /etc/systemd/system/fix-abnt2-slash.service
 ```
 
 Add this content:
 ```
 [Unit]
-Description=Fix ABNT2 slash/question mark key (scancode 97)
+Description=Fix ABNT2 slash/question mark key (scancode e01d)
 DefaultDependencies=no
 After=local-fs.target
 Before=sysinit.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/setkeycodes 97 89
+ExecStart=/usr/bin/setkeycodes e01d 89
 RemainAfterExit=yes
 
 [Install]
@@ -523,9 +523,17 @@ dumpkeys > /usr/local/share/kbd/keymaps/br-abnt2-lenovo.map
 nano /usr/local/share/kbd/keymaps/br-abnt2-lenovo.map
 ```
 
-Find or add this line near the top (after the "keymaps" line):
+Find the keymaps line and after it add:
 ```
+keycode 89 = slash question
+# Map the extended scancode
 keycode 97 = slash question
+```
+
+Or append this at the end of the file:
+```
+# Lenovo ABNT2 fix for ? / key
+keycode 89 = slash question
 ```
 
 Save and apply:
@@ -567,7 +575,7 @@ options thinkpad_acpi fan_control=1
 ```
 
 **Summary of what was fixed:**
-- ✅ Scancode 97 mapped to keycode 89 (slash/question mark)
+- ✅ Extended scancode e01d mapped to keycode 89 (slash/question mark)
 - ✅ Automatic fix at every boot via systemd service
 - ✅ Custom keymap for console (alternative)
 - ✅ X11/Wayland configuration for GUI
@@ -1883,14 +1891,14 @@ setxkbmap -model abnt2 -layout br -variant abnt2
 echo 'setxkbmap -model abnt2 -layout br -variant abnt2' >> ~/.xprofile
 ```
 
-### ABNT2 "? /" Key Not Working (Scancode 97 Issue)
+### ABNT2 "? /" Key Not Working (Extended Scancode e01d Issue)
 
 **Symptom**: The slash/question mark key (where right Ctrl is on US keyboards) doesn't work.
 
 **Temporary fix (immediate):**
 ```bash
 # Apply the fix right now
-sudo setkeycodes 97 89
+sudo setkeycodes e01d 89
 
 # Test - type the ? / key
 ```
@@ -1913,14 +1921,14 @@ sudo nano /etc/systemd/system/fix-abnt2-slash.service
 Add:
 ```
 [Unit]
-Description=Fix ABNT2 slash/question mark key (scancode 97)
+Description=Fix ABNT2 slash/question mark key (scancode e01d)
 DefaultDependencies=no
 After=local-fs.target
 Before=sysinit.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/setkeycodes 97 89
+ExecStart=/usr/bin/setkeycodes e01d 89
 RemainAfterExit=yes
 
 [Install]
@@ -1943,8 +1951,8 @@ sudo nano /usr/local/bin/fix-lenovo-abnt2.sh
 Add:
 ```bash
 #!/bin/bash
-# Fix Lenovo ABNT2 keyboard scancode 97
-setkeycodes 97 89
+# Fix Lenovo ABNT2 keyboard extended scancode e01d
+setkeycodes e01d 89
 ```
 
 Make executable and add to systemd:
@@ -1996,11 +2004,17 @@ sudo evtest
 
 # Select your keyboard device (usually event0 or event1)
 # Press the "? /" key
-# Note the scancode it reports
+# Note the scancode it reports (should be e01d)
 
-# If it's not 97, use that scancode in the fix:
-sudo setkeycodes YOUR_SCANCODE 89
+# The correct scancode for Lenovo ABNT2 is: e01d
+# Maps to keycode: 89 (slash/question)
 ```
+
+**Understanding the scancode:**
+- `e01d` is an **extended scancode** (starts with e0)
+- This is different from simple scancodes like `1c` (Enter)
+- Lenovo uses this extended scancode for the ABNT2 extra key
+- Standard ABNT2 keyboards may use different scancodes
 
 ### GPU Not Binding to vfio-pci
 
@@ -2157,12 +2171,12 @@ The author is not responsible for any consequences of following this guide.
 
 ## Guide Information
 
-**Version**: 1.3 (Complete - Single Comprehensive Guide)  
+**Version**: 1.4 (Complete - Single Comprehensive Guide)  
 **Last Updated**: September 29, 2025  
 **Covers**:
 - ✅ Arch Linux installation (complete)
 - ✅ UUID/by-id path usage (prevents NVMe order change issues)
-- ✅ **Lenovo ABNT2 keyboard complete fix (scancode 97 "? /" key)**
+- ✅ **Lenovo ABNT2 keyboard complete fix (extended scancode e01d for "? /" key) - CORRECTED**
 - ✅ Lenovo keyboard port code fix (BR-ABNT2 support)
 - ✅ BIOS & bootloader configuration
 - ✅ KVM/QEMU setup
@@ -2174,7 +2188,8 @@ The author is not responsible for any consequences of following this guide.
 - ✅ Comprehensive troubleshooting
 
 **Changelog**:
-- v1.3: **CRITICAL FIX** - Complete Lenovo ABNT2 keyboard fix including scancode 97 remapping for "? /" key (works in console, X11, and Wayland)
+- v1.4: **CRITICAL CORRECTION** - Fixed scancode from 97 to e01d (extended scancode) for Lenovo ABNT2 "? /" key. Correct command is: `setkeycodes e01d 89`
+- v1.3: CRITICAL FIX - Complete Lenovo ABNT2 keyboard fix including scancode remapping for "? /" key (works in console, X11, and Wayland)
 - v1.2: CRITICAL FIX - Use UUID for boot partition and /dev/disk/by-id/ for NVMe passthrough to prevent device order issues
 - v1.1: Added Lenovo keyboard port code fix for ThinkPad P16v with BR-ABNT2 keyboard support
 - v1.0: Initial complete guide
